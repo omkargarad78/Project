@@ -1,0 +1,43 @@
+# Secrets. The signing key and the database password live here, and a single
+# accidental commit of this file means rotating both.
+.env
+.env.*
+!.env.example
+
+# Local state: the SQLite database, uploaded statements, generated workpapers.
+# Uploads are someone's financial statements and must never reach a remote.
+var/
+*.db
+*.db-journal
+*.sqlite3
+
+# Ingested reference datasets are large and are imported per deployment. The
+# rule versions and security master under data/ are tracked; these are not.
+data/fx/*.fxdataset.json
+data/market/*.csv
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

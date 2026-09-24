@@ -1,0 +1,72 @@
+# Local deployment of the whole stack.
+#
+# Postgres rather than SQLite here because the schema is written against it
+# and it is the deployment target; SQLite stays available for a bare
+# `uvicorn` run without Docker (see the README).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: schedulefa
+      POSTGRES_USER: schedulefa
+      # Read from your .env. There is no default: a database password baked
+      # into a compose file is a password everyone who clones the repo knows.
+      POSTGRES_PASSWORD: ${FA_DB_PASSWORD:?set FA_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready, not a port probe: the port is open before the server will
+      # accept a connection, and the app would race it on a cold start.
+      test: ["CMD-SHELL", "pg_isready -U schedulefa -d schedulefa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Not published. Only the app needs to reach it, and an exposed database
+    # port is the most common way one of these ends up on the internet.
+    expose:
+      - "5432"
+    restart: unless-stopped
+
+  # Runs the schema migration to completion, then exits. The app waits on it,
+  # so the server never starts against a schema it does not match.
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      FA_ENVIRONMENT: production
+      FA_SECRET_KEY: ${FA_SECRET_KEY:?set FA_SECRET_KEY in .env}
+      FA_DATABASE_URL: postgresql+psycopg://schedulefa:${FA_DB_PASSWORD}@db:5432/schedulefa
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    environment:
+      FA_ENVIRONMENT: production
+      FA_SECRET_KEY: ${FA_SECRET_KEY:?set FA_SECRET_KEY in .env}
+      FA_DATABASE_URL: postgresql+psycopg://schedulefa:${FA_DB_PASSWORD}@db:5432/schedulefa
+      FA_STORAGE_ROOT: /var/lib/schedulefa/storage
+      FA_JOB_BACKEND: thread
+      FA_MAX_UPLOAD_BYTES: ${FA_MAX_UPLOAD_BYTES:-26214400}
+    volumes:
+      # Uploaded statements and generated workpapers. This is the volume to
+      # back up; losing it loses the evidence behind a filed figure.
+      - storage:/var/lib/schedulefa/storage
+      # Rate and price datasets, read-only to the container: the app resolves
+      # rates from them and must never be able to rewrite one.
+      - ./data:/srv/app/data:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  storage:
